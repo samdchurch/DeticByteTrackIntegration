@@ -1,6 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import copy
 import logging
+import time
+
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 import torch
@@ -83,20 +85,56 @@ class CustomRCNN(GeneralizedRCNN):
             ret['num_sample_cats'] = cfg.MODEL.NUM_SAMPLE_CATS
         return ret
 
+    def get_features(self,
+                     batched_inputs: Tuple[Dict[str, torch.tensor]],
+                     results):
+
+        images = self.preprocess_image(batched_inputs)
+        features = self.backbone(images.tensor)
+
+        num_bboxs = [len(x['instances']) for x in results]
+
+        pred_feats = self.roi_heads.box_pooler([features[k] for k in self.roi_heads.box_in_features],
+                                               [x['instances'].pred_boxes for x in results])
+
+        for i, x in enumerate(results):
+            x['instances'].feat = pred_feats[sum(num_bboxs[:i]):sum(num_bboxs[:i + 1])]
+
+        return results
 
     def inference(
         self,
         batched_inputs: Tuple[Dict[str, torch.Tensor]],
         detected_instances: Optional[List[Instances]] = None,
         do_postprocess: bool = True,
+        return_feats: bool = False
     ):
         assert not self.training
         assert detected_instances is None
 
+        ts = time.time()
         images = self.preprocess_image(batched_inputs)
+        print('Images time: ', time.time() - ts)
+
+        ts = time.time()
         features = self.backbone(images.tensor)
+        print('features time: ', time.time() - ts)
+
+        ts = time.time()
         proposals, _ = self.proposal_generator(images, features, None)
+        print('proposals time: ', time.time() - ts)
+
+        ts = time.time()
         results, _ = self.roi_heads(images, features, proposals)
+        print('results time: ', time.time() - ts)
+        if return_feats:
+            num_bboxs = [len(x) for x in results]
+            ts = time.time()
+            pred_feats = self.roi_heads.box_pooler([features[k] for k in self.roi_heads.box_in_features], [x.pred_boxes for x in results])
+            print('generate features time: ', time.time() - ts)
+            for i, x in enumerate(results):
+                x.feat = pred_feats[sum(num_bboxs[:i]):sum(num_bboxs[:i+1])]
+
         if do_postprocess:
             assert not torch.jit.is_scripting(), \
                 "Scripting is not supported for postprocess."
@@ -104,7 +142,6 @@ class CustomRCNN(GeneralizedRCNN):
                 results, batched_inputs, images.image_sizes)
         else:
             return results
-
 
     def forward(self, batched_inputs: List[Dict[str, torch.Tensor]]):
         """
