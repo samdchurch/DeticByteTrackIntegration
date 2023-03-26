@@ -244,6 +244,7 @@ def tracking():
 
         t_proc = batch_size / video.frame_rate
         eff_min_per_hour = (t_data + t_model) / (t_proc / 3600) / 60
+
         print(f'Data: {t_data:.3f} Model: {t_model:.3f} Processing Time: {eff_min_per_hour:.1f} processing minutes per input hour', flush=True)
 
         ts = time.time()
@@ -317,4 +318,4 @@ def getDistinctColors(n):
     return [HSVToRGB(huePartition * value, 1.0, 1.0) for value in range(0, n)]
 
 if __name__ == '__main__':
-    tracking()
+    prediction()
